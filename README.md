@@ -19,6 +19,8 @@ python3 tests/integration-relay.py
 
 `make report` requires `gcovr`. The integration script uses a deterministic local test relay. For the required course relay, start its Python file in a separate terminal and run the receiver first:
 
+In VS Code, open the project **inside Codespaces or a Remote-SSH session on Onyx** and select the `Codespaces / Onyx (GCC)` C/C++ configuration. Its compiler path and system headers are Linux paths. A VS Code window running locally on Windows will not find Linux socket headers even when `src` is added to `includePath`; reopen the folder remotely and run **C/C++: Reset IntelliSense Database** if old diagnostics remain.
+
 ```sh
 python3 cs425_relay.py --delay 50
 ./build/release/myapp recv -s sam-1 127.0.0.1 out.bin
@@ -40,20 +42,22 @@ This split lets Unity tests simulate packet delivery and time precisely. The see
 
 ## Results
 
-The required measurements must use the **course relay** with `--delay 50` and a 1 MiB file. Run `python3 scripts/measure.py /path/to/cs425_relay.py [port]` on Codespaces or Onyx. It performs three verified runs for each case, records raw times, and prints a Markdown table. Insert its measured output here after running it.
+These measurements used the **course relay** with `--delay 50` and a 1 MiB file in Codespaces. The `scripts/measure.py` runner made three byte-verified transfers for each combination and timed the sender's completion. Throughput is 1024 KiB divided by the mean time.
 
 | Window | Loss | Corrupt | Dup | Mean time (s) | Throughput (KiB/s) |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 0 | 0 | 0 | Pending course relay | Pending |
-| 16 | 0 | 0 | 0 | Pending course relay | Pending |
-| 1 | 0.05 | 0 | 0 | Pending course relay | Pending |
-| 16 | 0.05 | 0 | 0 | Pending course relay | Pending |
+| 1 | 0 | 0 | 0 | 103.112 | 9.93 |
+| 16 | 0 | 0 | 0 | 6.573 | 155.79 |
+| 1 | 0.05 | 0 | 0 | 128.405 | 7.97 |
+| 16 | 0.05 | 0 | 0 | 24.116 | 42.46 |
 
-The no-loss window-1 transfer sends 1024 DATA packets plus FIN, so its observed RTT estimate is the mean transfer time divided by 1025. Subtract the relay's 0.100-second round trip to estimate local scheduling, processing, and socket overhead. Compare the measured window-16 speedup with 16×: pipelining hides most RTTs, but serialization, handling ACKs, and finite buffers limit the gain. Under loss, a window-16 timeout resends every outstanding packet while window 1 resends only one. Fill in the numeric estimate and measured comparisons after running the script.
+The no-loss window-1 transfer sends 1024 DATA packets plus FIN, waiting a round trip for each. Its observed RTT estimate is 103.112 / 1025 = **100.597 ms**. The relay adds 100 ms, leaving about **0.597 ms per round trip** for process scheduling, socket and protocol handling, and measurement overhead. This is an estimate from the total time, not a per-packet timestamp trace.
+
+At zero loss, window 16 was **15.69× faster** than window 1 (103.112 / 6.573), close to the ideal 16× because the sender can keep 16 packets in flight during the relay's round trip. The remaining gap reflects packet processing, ACK handling, and finite window refill timing. With 5% loss, window 1 slowed by **24.5%**, while window 16 took **3.67×** its own clean-channel time (a 266.9% increase). A window-16 timeout retransmits the entire outstanding window after a gap, including packets sent after the lost packet that the Go-Back-N receiver discarded. Window 1 resends only its single outstanding packet. In absolute seconds the loss added 25.293 s for window 1 and 17.543 s for window 16; the larger window still finished faster, but lost much more of its clean-channel speedup.
 
 ## Known issues and remaining verification
 
-The supplied ZIP does not contain the course relay or an attached Git repository, so the course-relay measurements, a Codespaces/Onyx run, and a green GitHub CI run remain to be verified in the actual repository. Do not submit the placeholder Results table. This environment runs AddressSanitizer tests, but its LeakSanitizer cannot inspect `/proc`; repeat `make leak` and `make leak-test` in Codespaces or Onyx.
+The course relay transfer, the 12 performance runs, `make leak`, and `make leak-test` succeeded in Codespaces. The source ZIP is not attached to the user's Git repository here, so a green GitHub CI run and a fresh submission-report DOCX still need confirmation after pushing the final README. Local sandbox LeakSanitizer could not inspect `/proc`, but the Codespaces run completed successfully.
 
 ## Experience
 
